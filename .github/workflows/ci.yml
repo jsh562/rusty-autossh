@@ -113,7 +113,13 @@ jobs:
         include:
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
           - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, cross: true }
-          - { os: macos-latest, target: x86_64-apple-darwin }
+          # x86_64-apple-darwin runs on macos-13 (native Intel host). DO NOT
+          # use macos-latest here: that's aarch64 (Apple Silicon) since
+          # March 2024, and running Intel binaries under Rosetta 2 emulation
+          # has known SIGCHLD reaping issues — tokio's child.wait() never
+          # returns under translation, causing tests/signals.rs to hang
+          # indefinitely. macos-13 is the last Intel-native GitHub runner.
+          - { os: macos-13, target: x86_64-apple-darwin }
           - { os: macos-latest, target: aarch64-apple-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
     env:

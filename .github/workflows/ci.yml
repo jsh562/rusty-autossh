@@ -147,7 +147,17 @@ jobs:
         shell: bash
       - name: Test
         if: matrix.cross != true
-        run: cargo test --release --target ${{ matrix.target }} --all-features
+        # `--test-threads=1` serializes the integration tests. The
+        # `tests/signals.rs` suite spins up its own tokio current_thread
+        # runtime per test and exercises process-wide Unix signals; with
+        # parallel test threads each test gets a separate tokio runtime
+        # but the OS signal handlers installed by tokio's signal driver
+        # leak across runtime drops, so a signal sent by test N can be
+        # consumed (or dropped) by the dead runtime from test N-1. This
+        # only manifests on macOS x86_64 runners under release builds —
+        # Linux and aarch64 happen to schedule the new handler in time.
+        # Serializing eliminates the cross-runtime contention.
+        run: cargo test --release --target ${{ matrix.target }} --all-features -- --test-threads=1
       - name: Library-without-binary build
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: cargo build --no-default-features

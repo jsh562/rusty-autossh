@@ -45,17 +45,11 @@ pub fn spawn_signal_source() -> mpsc::Receiver<SupervisorEvent> {
 fn install_listeners(tx: mpsc::Sender<SupervisorEvent>) {
     use tokio::signal::unix::{SignalKind, signal};
 
-    // IMPORTANT: `signal(kind)` is called SYNCHRONOUSLY here (outside the
-    // `tokio::spawn`) so the OS signal handler is registered BEFORE this
-    // function returns. Previously the `signal()` call lived inside the
-    // spawned task, which created a race: on slower runners (notably
-    // aarch64-apple-darwin CI) the signal could arrive before the listener
-    // task had been scheduled, missing the event entirely.
     fn spawn_one(tx: mpsc::Sender<SupervisorEvent>, kind: SignalKind, tag: PubSignalKind) {
-        let Ok(mut stream) = signal(kind) else {
-            return;
-        };
         tokio::spawn(async move {
+            let Ok(mut stream) = signal(kind) else {
+                return;
+            };
             while stream.recv().await.is_some() {
                 if tx.send(SupervisorEvent::SignalReceived(tag)).await.is_err() {
                     break;
@@ -86,36 +80,34 @@ fn install_listeners(tx: mpsc::Sender<SupervisorEvent>) {
 fn install_listeners(tx: mpsc::Sender<SupervisorEvent>) {
     use tokio::signal::windows::{ctrl_break, ctrl_c};
 
-    // Same synchronous-registration pattern as the Unix branch — install
-    // each handler before the consumer task is spawned so no signal can
-    // arrive in the window between `spawn_signal_source` returning and
-    // the consumer task scheduling.
     let tx_c = tx.clone();
-    if let Ok(mut stream) = ctrl_c() {
-        tokio::spawn(async move {
-            while stream.recv().await.is_some() {
-                if tx_c
-                    .send(SupervisorEvent::SignalReceived(PubSignalKind::Interrupt))
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
+    tokio::spawn(async move {
+        let Ok(mut stream) = ctrl_c() else {
+            return;
+        };
+        while stream.recv().await.is_some() {
+            if tx_c
+                .send(SupervisorEvent::SignalReceived(PubSignalKind::Interrupt))
+                .await
+                .is_err()
+            {
+                break;
             }
-        });
-    }
+        }
+    });
 
-    if let Ok(mut stream) = ctrl_break() {
-        tokio::spawn(async move {
-            while stream.recv().await.is_some() {
-                if tx
-                    .send(SupervisorEvent::SignalReceived(PubSignalKind::CtrlBreak))
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
+    tokio::spawn(async move {
+        let Ok(mut stream) = ctrl_break() else {
+            return;
+        };
+        while stream.recv().await.is_some() {
+            if tx
+                .send(SupervisorEvent::SignalReceived(PubSignalKind::CtrlBreak))
+                .await
+                .is_err()
+            {
+                break;
             }
-        });
-    }
+        }
+    });
 }

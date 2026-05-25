@@ -1,0 +1,39 @@
+# cargo-audit configuration — see https://docs.rs/cargo-audit/
+#
+# Per `project-instructions.md` §Security & Supply Chain:
+#   "`cargo audit` advisory hits block release; `--ignore` requires an
+#    in-code rationale comment."
+#
+# Each entry below justifies why a known advisory is being temporarily
+# allow-listed. Entries MUST be re-evaluated at every release; the
+# CHANGELOG should mention removals.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2025-0069: `daemonize` 0.5 is flagged unmaintained.
+    # Rationale: `daemonize` is the de-facto Rust wrapper for the POSIX
+    #   double-fork; the v0.5 surface we use (`Daemonize::new` + stdio +
+    #   umask + working_directory + start) is stable, tiny, and not under
+    #   active development because there is nothing to add. The crate's
+    #   "unmaintained" flag is informational, not a vulnerability. We
+    #   re-audit per-release and will migrate if a replacement matures.
+    #   Tracked in CHANGELOG `[Unreleased]` as a follow-up review item.
+    "RUSTSEC-2025-0069",
+
+    # RUSTSEC-2026-0009: `time` 0.3.45 DoS via stack exhaustion.
+    # Rationale: The fix in `time` 0.3.47 requires Rust 1.88.0; our MSRV
+    #   is pinned at 1.85 per `project-instructions.md` Technology Stack
+    #   ("portfolio-wide MSRV is current stable minus two minor releases
+    #   at the time each port releases"). The advisory's DoS path is
+    #   reachable only through `time`'s parsing surface, which
+    #   `tracing-appender` (our sole transitive consumer of `time`) does
+    #   NOT exercise — it uses `time` only for `OffsetDateTime::now_utc`
+    #   plus formatting of the log-rotation suffix, both code paths that
+    #   take no user-controlled input. The supervisor never accepts a
+    #   user-supplied date/time string. Risk is therefore mitigated by
+    #   our usage profile, not by patch. Tracked in CHANGELOG
+    #   `[Unreleased]` for revisit when MSRV next advances; removal
+    #   commitment: bump `time` to >=0.3.47 simultaneously with the next
+    #   MSRV bump.
+    "RUSTSEC-2026-0009",
+]

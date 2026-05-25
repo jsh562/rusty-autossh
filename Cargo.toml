@@ -1,0 +1,114 @@
+[package]
+name = "rusty-autossh"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["James Han <jsh562@users.noreply.github.com>"]
+license = "MIT OR Apache-2.0"
+description = "Keep an SSH tunnel alive across drops — a Rust port of Carson Harding's `autossh 1.4g` SSH connection supervisor. Tokio-based supervisor, `-M <port>` monitor-port heartbeat (or `-M 0` exit-only respawn), `AUTOSSH_*` env-var surface incl. `AUTOSSH_MESSAGE` byte-identical wire format, Unix `-f` daemonize + Windows `DETACHED_PROCESS` analogue, SIGTERM/SIGUSR1/SIGHUP handling on Unix, byte-equal Strict-mode upstream compatibility, and a typed library API."
+repository = "https://github.com/jsh562/rusty-autossh"
+homepage = "https://github.com/jsh562/rusty-autossh"
+documentation = "https://docs.rs/rusty-autossh"
+readme = "README.md"
+keywords = ["ssh", "supervisor", "autossh", "tunnel", "keepalive"]
+categories = ["command-line-utilities", "network-programming"]
+default-run = "rusty-autossh"
+
+[features]
+default = ["cli"]
+# `cli` gates the CLI-only dependencies so library consumers can depend on
+# rusty-autossh with `default-features = false` without pulling in clap /
+# clap_complete / anstyle / tracing-* / daemonize / atomicwrites /
+# windows-sys. Two-config feature matrix per FR-061:
+#   * default = ["cli"]           → full CLI binary + library API
+#   * default-features = false    → library only (tokio + thiserror + socket2)
+# Per FR-061 + AD-001. NO companion-binary feature at v0.1.0 (single bin per
+# Constitution III + AD-001).
+cli = [
+    "dep:clap",
+    "dep:clap_complete",
+    "dep:anstyle",
+    "dep:tracing",
+    "dep:tracing-subscriber",
+    "dep:tracing-appender",
+    "dep:daemonize",
+    "dep:atomicwrites",
+    "dep:windows-sys",
+]
+
+[dependencies]
+# Always-on: tokio IS the supervisor runtime (AD-004). Only the feature
+# subset required for the supervisor loop, NOT the full tokio feature set.
+tokio = { version = "1", features = [
+    "process",
+    "net",
+    "signal",
+    "sync",
+    "time",
+    "rt",
+    "macros",
+    "io-util",
+] }
+# Always-on: `AutosshError` variants use thiserror derives (AD-014).
+thiserror = "2"
+# Always-on: SO_REUSEADDR on the monitor-port listener pair per HINT-020.
+socket2 = "0.5"
+
+# CLI-only deps gated behind the `cli` feature.
+clap = { version = "4", features = ["derive"], optional = true }
+clap_complete = { version = "4", optional = true }
+anstyle = { version = "1", optional = true }
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", optional = true }
+tracing-appender = { version = "0.2", optional = true }
+atomicwrites = { version = "0.4", optional = true }
+
+# Unix-only CLI-gated dep: `daemonize` 0.5 for the `-f` Unix double-fork.
+[target.'cfg(unix)'.dependencies]
+daemonize = { version = "0.5", optional = true }
+
+# Windows-only CLI-gated dep: `windows-sys` 0.59 for the `-f` `DETACHED_PROCESS`
+# self-respawn analogue.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_System_Threading",
+    "Win32_Foundation",
+    "Win32_System_Console",
+    "Win32_Security",
+], optional = true }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+static_assertions = "1"
+tokio-test = "0.4"
+
+[[bin]]
+name = "rusty-autossh"
+path = "src/main.rs"
+required-features = ["cli"]
+
+# Dev-only test binary per HINT-009 / T038. Built only under `cargo test`
+# (controllable ssh stand-in via `AUTOSSH_PATH=<echo_child>`). NOT bench'd,
+# NOT doc'd, NOT included in `cargo test --lib` scope.
+[[bin]]
+name = "echo_child"
+path = "tests/bin/echo_child.rs"
+required-features = []
+test = false
+bench = false
+doc = false
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }{ archive-suffix }"
+bin-dir = "{ name }-v{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

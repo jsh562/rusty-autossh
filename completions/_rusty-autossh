@@ -1,0 +1,82 @@
+#compdef rusty-autossh
+
+autoload -U is-at-least
+
+_rusty-autossh() {
+    typeset -A opt_args
+    typeset -a _arguments_options
+    local ret=1
+
+    if is-at-least 5.2; then
+        _arguments_options=(-s -S -C)
+    else
+        _arguments_options=(-s -C)
+    fi
+
+    local context curcontext="$curcontext" state line
+    _arguments "${_arguments_options[@]}" : \
+'-M+[\`-M <PORT\[\:ECHO\]>\` / \`--monitor-port\`\: monitor port (0 disables)]:PORT[:ECHO]:_default' \
+'--monitor-port=[\`-M <PORT\[\:ECHO\]>\` / \`--monitor-port\`\: monitor port (0 disables)]:PORT[:ECHO]:_default' \
+'--poll=[\`--poll <SECS>\`\: heartbeat interval (default 600s)]:SECS:_default' \
+'--first-poll=[\`--first-poll <SECS>\`\: initial poll delay]:SECS:_default' \
+'--gate-time=[\`--gate-time <SECS>\`\: min lifetime before retry counts as failure]:SECS:_default' \
+'--max-start=[\`--max-start <N>\`\: consecutive-retry cap (-1 = unlimited)]:N:_default' \
+'--max-lifetime=[\`--max-lifetime <SECS>\`\: total-runtime cap (0 = unlimited)]:SECS:_default' \
+'--ssh-path=[\`--ssh-path <PATH>\`\: override ssh binary (else \`AUTOSSH_PATH\` / PATH)]:PATH:_files' \
+'--pid-file=[\`--pid-file <PATH>\`\: override \`AUTOSSH_PIDFILE\`]:PATH:_files' \
+'--log-file=[\`--log-file <PATH>\`\: override \`AUTOSSH_LOGFILE\`]:PATH:_files' \
+'--log-level=[\`--log-level <LEVEL>\`\: explicit log level (trace/debug/info/warn/error)]:LEVEL:_default' \
+'-f[\`-f\` / \`--background\`\: daemonize to background]' \
+'--background[\`-f\` / \`--background\`\: daemonize to background]' \
+'-V[\`-V\` / \`--version\`\: print version + exit]' \
+'--version[\`-V\` / \`--version\`\: print version + exit]' \
+'-1[\`-1\` / \`--one-shot\`\: exit non-zero on first connection failure]' \
+'--one-shot[\`-1\` / \`--one-shot\`\: exit non-zero on first connection failure]' \
+'--debug[\`--debug\`\: enable debug logging]' \
+'(--no-strict)--strict[\`--strict\`\: force Strict (upstream-compat) mode]' \
+'--no-strict[\`--no-strict\`\: force Default mode]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'::ssh_args -- Remaining positional argv passed verbatim to ssh:_default' \
+":: :_rusty-autossh_commands" \
+"*::: :->rusty-autossh" \
+&& ret=0
+    case $state in
+    (rusty-autossh)
+        words=($line[2] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rusty-autossh-command-$line[2]:"
+        case $line[2] in
+            (completions)
+_arguments "${_arguments_options[@]}" : \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':shell -- Target shell:((bash\:"Bash completion script"
+zsh\:"Zsh completion script"
+fish\:"Fish completion script"
+powershell\:"PowerShell completion script"))' \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+}
+
+(( $+functions[_rusty-autossh_commands] )) ||
+_rusty-autossh_commands() {
+    local commands; commands=(
+'completions:Emit a shell completion script to stdout' \
+    )
+    _describe -t commands 'rusty-autossh commands' commands "$@"
+}
+(( $+functions[_rusty-autossh__subcmd__completions_commands] )) ||
+_rusty-autossh__subcmd__completions_commands() {
+    local commands; commands=()
+    _describe -t commands 'rusty-autossh completions commands' commands "$@"
+}
+
+if [ "$funcstack[1]" = "_rusty-autossh" ]; then
+    _rusty-autossh "$@"
+else
+    compdef _rusty-autossh rusty-autossh
+fi

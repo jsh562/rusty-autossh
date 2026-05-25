@@ -113,13 +113,14 @@ jobs:
         include:
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
           - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, cross: true }
-          # x86_64-apple-darwin runs on macos-13 (native Intel host). DO NOT
-          # use macos-latest here: that's aarch64 (Apple Silicon) since
-          # March 2024, and running Intel binaries under Rosetta 2 emulation
-          # has known SIGCHLD reaping issues — tokio's child.wait() never
-          # returns under translation, causing tests/signals.rs to hang
-          # indefinitely. macos-13 is the last Intel-native GitHub runner.
-          - { os: macos-13, target: x86_64-apple-darwin }
+          # x86_64-apple-darwin: build only (no tests). macos-latest is
+          # aarch64 since 2024-03 so Intel binaries run under Rosetta 2,
+          # which breaks tokio's SIGCHLD reaping (child.wait() hangs).
+          # macos-13 (native Intel) has indefinite queue times on free
+          # tier. The aarch64-apple-darwin job exercises the same Rust
+          # code; compile-only here verifies the x86_64 build works for
+          # cargo-binstall users. Same approach as ripgrep, uutils, etc.
+          - { os: macos-latest, target: x86_64-apple-darwin, build_only: true }
           - { os: macos-latest, target: aarch64-apple-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
     env:
@@ -152,18 +153,14 @@ jobs:
           fi
         shell: bash
       - name: Test
-        if: matrix.cross != true
-        # `--test-threads=1` serializes the integration tests. The
-        # `tests/signals.rs` suite spins up its own tokio current_thread
-        # runtime per test and exercises process-wide Unix signals; with
-        # parallel test threads each test gets a separate tokio runtime
-        # but the OS signal handlers installed by tokio's signal driver
-        # leak across runtime drops, so a signal sent by test N can be
-        # consumed (or dropped) by the dead runtime from test N-1. This
-        # only manifests on macOS x86_64 runners under release builds —
-        # Linux and aarch64 happen to schedule the new handler in time.
-        # Serializing eliminates the cross-runtime contention.
-        run: cargo test --release --target ${{ matrix.target }} --all-features -- --test-threads=1
+        # Skip tests on:
+        # - cross: aarch64-linux-gnu is cross-compiled, no runtime here.
+        # - build_only: x86_64-apple-darwin builds under cross-compile
+        #   from aarch64; running Intel binaries under Rosetta 2 breaks
+        #   tokio's SIGCHLD reaping (hangs forever). Build-only is enough
+        #   to catch compile/link regressions for binstall users.
+        if: matrix.cross != true && matrix.build_only != true
+        run: cargo test --release --target ${{ matrix.target }} --all-features
       - name: Library-without-binary build
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: cargo build --no-default-features

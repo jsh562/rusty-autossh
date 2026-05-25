@@ -166,7 +166,7 @@ async fn sigusr1_force_respawns_ssh_child() {
     // Send SIGUSR1 to ourselves; the supervisor's signal source picks
     // it up via `tokio::signal::unix::SignalKind::user_defined1()`.
     unsafe {
-        libc_kill(std::process::id() as i32, 10 /* SIGUSR1 */);
+        libc_kill(std::process::id() as i32, SIG_USR1);
     }
 
     // Second ChildSpawned must have a DIFFERENT pid (force-respawn).
@@ -497,3 +497,25 @@ unsafe extern "C" {
     #[link_name = "kill"]
     fn libc_kill(pid: i32, sig: i32) -> i32;
 }
+
+/// Platform-correct signal numbers. SIGTERM/SIGINT/SIGHUP are universal
+/// (15/2/1 on every Unix), but SIGUSR1 differs: 10 on Linux, 30 on the
+/// BSDs and macOS (where signal 10 is actually SIGBUS). Hard-coding `10`
+/// for SIGUSR1 in the previous version caused the test to send SIGBUS
+/// to itself on aarch64-apple-darwin CI, which is not delivered as a
+/// process-fatal signal when self-signaled — the supervisor never saw
+/// it and the second ChildSpawned never arrived.
+#[cfg(all(unix, target_os = "linux"))]
+const SIG_USR1: i32 = 10;
+#[cfg(all(
+    unix,
+    any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "dragonfly"
+    )
+))]
+const SIG_USR1: i32 = 30;

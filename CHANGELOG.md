@@ -16,6 +16,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ≥ 1.88; remove allow-list and bump together at the next MSRV bump.
   Risk mitigated by usage profile (no user-controlled date/time parsing).
 
+## [0.2.0] - 2026-05-26
+
+### Added (additive only — no v0.1.x behavior changed)
+
+- Portfolio-wide [Cargo Features Convention](https://github.com/jsh562/rustylib/blob/main/specs/adrs/0006-cargo-features-convention-for-portfolio-ports.md)
+  layout per ADR-0006 + `project-instructions.md` §Cargo Feature Surface. rusty-autossh applies the minimum convention as a **tightly-coupled-capability port** per spec 00011 §Scope Edge Cases.
+- New umbrella features (all `["cli"]` composition for this tightly-coupled-cap port):
+  - `full` — kitchen-sink umbrella per FR-002
+  - `autossh-classic` — required `<port>-classic` umbrella per FR-004; autossh 1.4g drop-in replacement
+  - `autossh-minimal` — preset bundle per FR-007; explicit minimal-CLI semantic alias
+- `default` now aliases to `full` instead of directly to `cli`. Resolved dependency set is identical (`full = ["cli"]`); no observable change for any consumer.
+- See [`docs/feature-layout.md`](docs/feature-layout.md) for the zero-leaf rationale.
+
+All v0.1.x feature names are preserved verbatim with identical compositions. `cli = ["dep:clap", "dep:clap_complete", "dep:anstyle", "dep:tracing", "dep:tracing-subscriber", "dep:tracing-appender", "dep:daemonize", "dep:atomicwrites", "dep:windows-sys"]` is unchanged. Library consumers using `default-features = false` get the same CLI-stripped build. The tokio-based supervisor (`SshSupervisor`, `SshSupervisorBuilder`, `MonitorMode`, `CompatibilityMode`, `SupervisorEvent`, `SignalKind`, `AutosshError`), monitor-port `ProbeLoop`, Strict-mode argv pre-scanner, and ssh-spawn pipeline all remain byte-for-byte unchanged from v0.1.0.
+
+### Notes
+
+- See the new `## Cargo Features` section in `README.md` for the
+  feature matrix, preset bundles, keep-list workaround, and convention
+  authority citations.
+- Reference: [ADR-0006](https://github.com/jsh562/rustylib/blob/main/specs/adrs/0006-cargo-features-convention-for-portfolio-ports.md)
+  (why this layout) + [`project-instructions.md` §Cargo Feature Surface](https://github.com/jsh562/rustylib/blob/main/project-instructions.md)
+  (what the rules are).
+- CI matrix expanded per spec 00011 FR-010..FR-014: now includes
+  `test-default` (kitchen sink + cross-compile), `test-no-default`
+  (bare library + dep-tree audit per SC-001), `test-autossh-classic`,
+  `test-autossh-minimal` (preset bundles per SC-003), `test-keeplist`
+  (keep-list workaround per SC-004), and `lint-convention` (vendored
+  `tools/feature-lint/run.sh` invocation per FR-052). Tier 4
+  (`check-leaf-<leaf>`) is intentionally empty — zero leaves carved
+  per docs/feature-layout.md.
+- Platform-conditional deps (`daemonize` Unix-only, `windows-sys`
+  Windows-only) live under `[target.'cfg(<plat>)'.dependencies]`
+  Cargo tables — a compile-time platform gate, NOT a Cargo feature.
+  They are unreachable on the non-applicable platform regardless of
+  feature selection and don't appear as separate `[features]` entries.
+- The lint script is **vendored** into `tools/feature-lint/` (synced
+  from the umbrella `jsh562/rustylib` repo) so per-port CI workflows
+  do not depend on cross-repo `actions/checkout` of the private
+  umbrella. Sync precedent set by rusty-figlet v0.2.0 (E011 Phase 2
+  iteration 6), rusty-ts v0.2.0 (E011 Phase 3), rusty-sponge v0.2.0
+  (E011 Phase 4), rusty-vipe v0.2.0 (E011 Phase 5), rusty-pee v0.2.0
+  (E011 Phase 6), rusty-pwgen v0.2.0 (E011 Phase 7), rusty-detox
+  v0.2.0 (E011 Phase 8), rusty-pv v0.2.0 (E011 Phase 9), and
+  rusty-pdfgrep v0.2.0 (E011 Phase 10).
+- rusty-autossh is the **LAST sibling port** in the E011 Phase 3..11
+  rollout; with v0.2.0 publish all 10 portfolio ports converge on the
+  portfolio-wide convention shape, satisfying spec 00011 SC-006
+  (10/10 ports shipped) and triggering Phase 12 portfolio wrap-up.
+
 ## [0.1.0] - 2026-MM-DD
 
 Initial release: Rust port of Carson Harding's `autossh 1.4g` SSH connection
@@ -78,5 +128,6 @@ The following constitute documented divergences from upstream `autossh 1.4g`:
 Reference baseline: upstream `autossh 1.4g` (Carson Harding,
 <https://www.harding.motd.ca/autossh/>).
 
-[Unreleased]: https://github.com/jsh562/rusty-autossh/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jsh562/rusty-autossh/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jsh562/rusty-autossh/releases/tag/v0.2.0
 [0.1.0]: https://github.com/jsh562/rusty-autossh/releases/tag/v0.1.0

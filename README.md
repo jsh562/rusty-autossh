@@ -1,92 +1,65 @@
 # rusty-autossh
 
+Keep an SSH tunnel alive across network drops. Rust port of [Carson Harding's `autossh 1.4g`](https://www.harding.motd.ca/autossh/) connection supervisor.
+
 [![crates.io](https://img.shields.io/crates/v/rusty-autossh.svg)](https://crates.io/crates/rusty-autossh)
 [![docs.rs](https://docs.rs/rusty-autossh/badge.svg)](https://docs.rs/rusty-autossh)
 [![CI](https://github.com/jsh562/rusty-autossh/actions/workflows/ci.yml/badge.svg)](https://github.com/jsh562/rusty-autossh/actions/workflows/ci.yml)
-[![MSRV 1.85](https://img.shields.io/badge/MSRV-1.85-blue.svg)](#minimum-supported-rust-version-msrv)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![MSRV](https://img.shields.io/badge/MSRV-1.85-blue.svg)](#msrv)
+[![license: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-Keep an SSH tunnel alive across network drops — a Rust port of Carson Harding's
-[`autossh 1.4g`](https://www.harding.motd.ca/autossh/) connection supervisor.
+Spawns `ssh(1)` as a child, optionally monitors the tunnel via the upstream-compatible `-M <port>` heartbeat (16-byte ASCII timestamp + newline, byte-equal wire format), & respawns the ssh child on death, probe timeout, or signal-triggered force-restart. Honors the full `AUTOSSH_*` environment surface, daemonizes on Unix via `daemonize` double-fork, & ships a Windows `DETACHED_PROCESS` self-respawn analogue.
 
-`rusty-autossh` spawns `ssh(1)` as a child process, optionally monitors the
-tunnel via the upstream-compatible `-M <port>` heartbeat (16-byte ASCII
-timestamp + newline; byte-identical wire format), and respawns the ssh child
-on death, probe timeout, or signal-triggered force-restart. Honors the full
-`AUTOSSH_*` environment-variable surface, supports Unix daemonization (`-f`
-double-fork via the `daemonize` crate), and ships a Windows `DETACHED_PROCESS`
-self-respawn analogue.
+Part of the [Rusty portfolio](https://jsh562.github.io/rusty-portfolio).
 
 ## Install
 
-### From crates.io
-
 ```sh
 cargo install rusty-autossh
-```
-
-### Pre-built binaries (cargo binstall)
-
-```sh
+# or, with prebuilt binaries:
 cargo binstall rusty-autossh
+# or, download directly from GitHub Releases:
+# https://github.com/jsh562/rusty-autossh/releases
 ```
 
-### Direct download
-
-GitHub Releases ship pre-built archives for the five DDR-003 targets:
-
-- Linux x86_64-unknown-linux-gnu
-- Linux aarch64-unknown-linux-gnu
-- macOS x86_64-apple-darwin
-- macOS aarch64-apple-darwin
-- Windows x86_64-pc-windows-msvc
+Prebuilt binaries ship for five targets: Linux x86_64/aarch64, macOS x86_64/aarch64, Windows x86_64.
 
 ## Usage
 
-### Monitor-port heartbeat (the classic upstream pattern)
-
 ```sh
+# Classic upstream pattern: heartbeat over a TCP listener pair, respawn on probe failure
 rusty-autossh -M 20000 -L 8080:localhost:80 user@host
-```
 
-Opens TCP listeners on `127.0.0.1:20000` and `127.0.0.1:20001`, sends a
-16-byte ASCII timestamp + newline every `AUTOSSH_POLL` seconds (default 600),
-respawns ssh if the round-trip fails or ssh exits non-zero.
-
-### `-M 0` no-monitor mode (the modern 2026 pattern)
-
-```sh
+# Modern 2026 pattern: no TCP listeners, ride on ssh's own keepalives
 rusty-autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" user@host
-```
 
-No TCP listeners; respawn ssh only on non-zero exit. Pair with ssh's own
-keepalives in `~/.ssh/config`. Clean exit (status 0) terminates the supervisor.
-
-### Daemonize with `-f` + write PID + log files
-
-```sh
+# Daemonize with a PID file & log file (good for systemd ExecStart=)
 AUTOSSH_PIDFILE=/tmp/auto.pid AUTOSSH_LOGFILE=/tmp/auto.log \
     rusty-autossh -f -M 0 -L 5432:db.internal:5432 jumpbox
-```
 
-Foreground exits cleanly; daemon child runs detached. `-f` unconditionally
-forces `AUTOSSH_GATETIME=0` to match upstream (silences password prompts in
-detached mode; non-zero gate can cause the detached child to abort on its own
-quick exit).
-
-### One-shot mode
-
-```sh
+# One-shot mode: exit non-zero on first failure (good for retry-loop wrappers)
 rusty-autossh -1 -M 0 user@host
+
+# Override autossh tunables on the command line (Default mode only)
+rusty-autossh --poll 30 --gate-time 5 --max-start 10 -M 0 user@host
+
+# Strict autossh-compat mode (drop-in autossh 1.4g replacement)
+rusty-autossh --strict -M 20000 user@host
+RUSTY_AUTOSSH_STRICT=1 rusty-autossh -M 20000 user@host
+autossh -M 20000 user@host                 # via autossh argv[0] symlink
+
+# Shell completions
+rusty-autossh completions bash              # > ~/.bash_completion.d/rusty-autossh
+rusty-autossh completions zsh               # > ~/.zfunc/_rusty-autossh
+rusty-autossh completions fish              # > ~/.config/fish/completions/rusty-autossh.fish
+rusty-autossh completions powershell
 ```
 
-Exit non-zero on first failure instead of entering the retry loop. Useful for
-systemd-supervised wrappers.
+All unrecognized post-`rusty-autossh` tokens (or anything after `--`) pass through to `ssh` verbatim.
 
-### Flag reference (Default mode)
+### Default-mode long-form aliases
 
-Short flags follow upstream exactly. Long-form Rust-native flags add
-ergonomic aliases:
+Short flags follow upstream exactly. Long-form Rust-native flags add ergonomic aliases.
 
 | Short        | Long alias        | Effect                                            |
 |--------------|-------------------|---------------------------------------------------|
@@ -107,78 +80,7 @@ ergonomic aliases:
 |              | `--strict`        | Force Strict-mode upstream-compat                 |
 |              | `--no-strict`     | Force Default mode (overrides env + argv[0])      |
 
-All unrecognized post-`rusty-autossh` tokens (or anything after `--`) are
-passed through to `ssh` verbatim.
-
-## Library API
-
-`rusty-autossh` ships a typed library API. Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-rusty-autossh = { version = "0.1", default-features = false }
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-```
-
-```rust,no_run
-use rusty_autossh::{SshSupervisorBuilder, MonitorMode};
-
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), rusty_autossh::AutosshError> {
-    let mut supervisor = SshSupervisorBuilder::new()
-        .ssh_args(vec!["-L".into(), "8080:localhost:80".into(), "user@host".into()])
-        .monitor_mode(MonitorMode::Active { port: 20000, echo: None })
-        .build()?;
-    supervisor.run().await
-}
-```
-
-## Cargo Features
-
-The CLI-only dependencies (clap, clap_complete, anstyle, tracing-*,
-daemonize, atomicwrites, windows-sys) are gated behind a default-on `cli`
-feature. Library consumers depending with `default-features = false` get only
-the tokio-based supervisor core + `thiserror` + `socket2`. The dep-tree
-discipline is enforced by an integration test
-(`tests/library_api.rs::default_features_off_excludes_cli_deps`).
-
-## Compatibility statement
-
-`rusty-autossh` aims for byte-equal stderr against upstream `autossh 1.4g`
-under **Strict mode** (activated by `--strict`, `RUSTY_AUTOSSH_STRICT=1`, or
-`argv[0]=autossh` via symlink). Default mode adds Rust-native long-form flags,
-structured tracing logs, and clap-styled diagnostics.
-
-### Intentional divergences vs upstream
-
-- **Windows `-f`** uses `CreateProcessW(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)`
-  self-respawn instead of fork (Windows has no fork). The foreground process
-  closes monitor-port listeners before exit; the detached child re-binds.
-- **`AUTOSSH_NTSERVICE`** (Cygwin NT-service mode) is NOT implemented. Use
-  `sc.exe create` or NSSM against the foreground `rusty-autossh` if you want
-  a full Windows Service.
-- **SIGUSR1 / SIGHUP** have no Windows equivalents. Documented workaround:
-  `taskkill /PID <ssh-pid>` triggers respawn via the SIGCHLD-equivalent code path.
-- **Windows ssh-child termination** uses `TerminateProcess` (immediate) with
-  NO 10-second SIGTERM grace window. Unix retains SIGTERM + 10s + SIGKILL.
-- **No built-in alerting** (Slack/email/PagerDuty) — pipe structured tracing
-  logs to your own alerting stack.
-- **No `mosh`-style roaming** — autossh's design respawns a fresh ssh on
-  tunnel death, dropping in-flight bytes.
-- **`ssh` binary is delegated** — rusty-autossh spawns the system `ssh`; it
-  does not implement the SSH protocol. Crates like `russh`/`ssh2`/`thrussh`
-  cover that niche.
-
-See [`COMPATIBILITY.md`](COMPATIBILITY.md) for the per-flag matrix.
-
-## Lockstep SemVer
-
-The CLI binary and the library API ship from a single crate with **lockstep
-SemVer**: any breaking change to either surface (CLI flag removal, library
-type change) bumps the major version together. Additive variants on
-`AutosshError` and `SupervisorEvent` are MINOR via `#[non_exhaustive]`.
-
-## `AUTOSSH_*` environment-variable reference
+### `AUTOSSH_*` environment-variable reference
 
 | Variable                | Default        | Effect                                                  |
 |-------------------------|----------------|---------------------------------------------------------|
@@ -196,24 +98,105 @@ type change) bumps the major version together. Additive variants on
 | `AUTOSSH_MESSAGE`       | unset          | Append to heartbeat payload (single space separator)    |
 | `RUSTY_AUTOSSH_STRICT`  | unset          | `=1` activates Strict mode (overridden by `--no-strict`)|
 
+## Library API
+
+The library exposes the `SshSupervisor` / `SshSupervisorBuilder` / `MonitorMode` / `CompatibilityMode` / `SupervisorEvent` / `SignalKind` / `AutosshError` types without any CLI deps. Use it when you want autossh-style respawn supervision inside a long-running Rust process.
+
+```rust,no_run
+use rusty_autossh::{SshSupervisorBuilder, MonitorMode};
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), rusty_autossh::AutosshError> {
+    let mut supervisor = SshSupervisorBuilder::new()
+        .ssh_args(vec!["-L".into(), "8080:localhost:80".into(), "user@host".into()])
+        .monitor_mode(MonitorMode::Active { port: 20000, echo: None })
+        .build()?;
+    supervisor.run().await
+}
+```
+
+```toml
+[dependencies]
+rusty-autossh = { version = "0.2", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+```
+
+For library-only consumers without CLI deps see the [Cargo Features](#cargo-features) section.
+
+## Cargo Features
+
+`default` enables `full`, which (for this tightly-coupled-capability port) resolves to the `cli` umbrella. `autossh-classic` reproduces v0.1.x bare-port behavior matching upstream `autossh 1.4g` 1:1. To strip the CLI surface use `default-features = false` or `--no-default-features` & add the features you want.
+
+rusty-autossh is a **tightly-coupled-capability port**: its one documented job is "keep an ssh process alive across network drops". The CLI sub-capabilities (clap argv parsing, completions subcommand, tracing-based logging, atomic pidfile writer, Unix daemonize double-fork, Windows `DETACHED_PROCESS` self-respawn analogue, Strict-mode argv pre-scanner) are tightly coupled inside the `cli` umbrella. No optional feature leaves are carved beyond the required umbrellas; see [`docs/feature-layout.md`](docs/feature-layout.md) for why.
+
+### Feature matrix
+
+| Feature | Description | Umbrella(s) |
+|---|---|---|
+| `cli` | All CLI-only dependencies (`clap`, `clap_complete`, `anstyle`, `tracing`, `tracing-subscriber`, `tracing-appender`, `daemonize` (Unix-only via `[target.'cfg(unix)']`), `atomicwrites`, `windows-sys` (Windows-only via `[target.'cfg(windows)']`)) and the binary entry point, clap argument parser, completions subcommand, structured tracing logger, atomic pidfile writer, Unix `-f` daemonize double-fork, Windows `DETACHED_PROCESS` self-respawn analogue, and Strict-mode argv pre-scanner. Library consumers strip via `default-features = false`. | `full`, `autossh-classic`, `autossh-minimal` |
+
+Platform-conditional deps (`daemonize`, `windows-sys`) live under `[target.'cfg(<plat>)'.dependencies]` Cargo tables. They are a compile-time platform gate, NOT a Cargo feature. They're unreachable on the non-applicable platform regardless of feature selection. The `cli` feature wires them up consistently across both platforms.
+
+### Preset bundles
+
+| Bundle | Composition | Use case |
+|---|---|---|
+| `autossh-classic` | `cli` | Drop-in upstream `autossh 1.4g` replacement. Strict mode is invoked via `--strict`, `RUSTY_AUTOSSH_STRICT`, or `autossh` argv[0] auto-detect. |
+| `autossh-minimal` | `cli` | Explicit minimal-CLI alias for users who prefer the `<port>-minimal` naming convention seen across other portfolio ports. Identical composition to `autossh-classic`. |
+
+### Keep-list workaround (Cargo features are union-only)
+
+Cargo features cannot subtract from `default`. To get "everything except a specific feature," disable defaults & enumerate the features you want:
+
+```sh
+cargo install rusty-autossh --no-default-features --features "cli"
+# → bare CLI. Equivalent to autossh-classic / autossh-minimal.
+```
+
+For the common cases the named [preset bundles](#preset-bundles) are usually sufficient.
+
+### Library-only consumers
+
+```toml
+[dependencies]
+rusty-autossh = { version = "0.2", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+```
+
+This strips `clap`, `clap_complete`, `anstyle`, `tracing`, `tracing-subscriber`, `tracing-appender`, `daemonize`, `atomicwrites`, & `windows-sys`. The resulting build pulls only the foundational supervisor stack (`tokio` with `process` + `net` + `signal` + `sync` + `time` + `rt` + `macros` + `io-util`, plus `thiserror` for `AutosshError` & `socket2` for monitor-port `SO_REUSEADDR`). The CI `test-no-default` job runs `cargo tree --no-default-features` on every PR & fails the build if any CLI-only dep leaks back in.
+
+### Convention authority
+
+This layout follows the portfolio-wide Cargo Features Convention. The "why" lives in [ADR-0006](https://github.com/jsh562/rustylib/blob/main/specs/adrs/0006-cargo-features-convention-for-portfolio-ports.md); the "what" lives in [`project-instructions.md` §Cargo Feature Surface](https://github.com/jsh562/rustylib/blob/main/project-instructions.md). Every Rusty port from v0.2 onward exposes the same umbrella set (`default` / `full` / `cli` / `<port>-classic`), per-port leaves named in kebab-case, & 2 to 4 preset bundles.
+
+## Compatibility
+
+`rusty-autossh` has two modes:
+
+- **Default mode.** clap-styled flag parser. Long-form Rust-native flags, structured tracing logs, & clap-styled diagnostics are all available.
+- **Strict mode** (activated by `--strict`, `RUSTY_AUTOSSH_STRICT=1`, or invoking the binary as `autossh`). Byte-equal stderr against upstream `autossh 1.4g`. `--no-strict` overrides env + argv[0].
+
+### Documented intentional divergences
+
+- **Windows `-f`** uses `CreateProcessW(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)` self-respawn instead of fork (Windows has no fork). The foreground process closes monitor-port listeners before exit; the detached child re-binds.
+- **`AUTOSSH_NTSERVICE`** (Cygwin NT-service mode) is NOT implemented. Use `sc.exe create` or NSSM against the foreground `rusty-autossh` for a full Windows Service.
+- **SIGUSR1 / SIGHUP** have no Windows equivalents. Documented workaround: `taskkill /PID <ssh-pid>` triggers respawn via the SIGCHLD-equivalent code path.
+- **Windows ssh-child termination** uses `TerminateProcess` (immediate) with no 10-second SIGTERM grace window. Unix retains SIGTERM + 10s + SIGKILL.
+
+See [`COMPATIBILITY.md`](COMPATIBILITY.md) for the per-flag matrix.
+
+## What's not shipped
+
+- **Built-in alerting** (Slack/email/PagerDuty). Pipe structured tracing logs to your own alerting stack.
+- **`mosh`-style roaming.** autossh's design respawns a fresh ssh on tunnel death, dropping in-flight bytes.
+- **SSH protocol implementation.** `rusty-autossh` spawns the system `ssh`; it doesn't speak SSH itself. Crates like `russh` / `ssh2` / `thrussh` cover that niche.
+- **`AUTOSSH_NTSERVICE` Cygwin NT-service mode.** Use `sc.exe create` or NSSM against the foreground `rusty-autossh` instead.
+- **Windows SIGTERM grace window.** `TerminateProcess` is immediate on Windows; Unix retains the 10-second SIGTERM + SIGKILL sequence.
+
+## MSRV
+
+Rust **1.85** (edition 2024). Pinned via `rust-toolchain.toml`. The portfolio MSRV policy is current stable minus two minor releases at each port's release time, re-verified per release.
+
 ## License
 
-Dual-licensed under either:
-
-- MIT License ([LICENSE](LICENSE) or <http://opensource.org/licenses/MIT>)
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
-
-at your option.
-
-### Contribution
-
-Unless you explicitly state otherwise, any contribution intentionally
-submitted for inclusion in the work by you, as defined in the Apache-2.0
-license, shall be dual-licensed as above, without any additional terms or
-conditions.
-
-## Minimum Supported Rust Version (MSRV)
-
-Rust **1.85** (edition 2024). Pinned via `rust-toolchain.toml`. The portfolio
-MSRV policy is current stable minus two minor releases at each port's release
-time; this is re-verified per release per portfolio §VI of `project-instructions.md`.
+Dual-licensed under [MIT](LICENSE) or [Apache-2.0](LICENSE-APACHE) at your option.

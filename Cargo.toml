@@ -1,6 +1,6 @@
 [package]
 name = "rusty-autossh"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["James Han <jsh562@users.noreply.github.com>"]
@@ -14,16 +14,75 @@ keywords = ["ssh", "supervisor", "autossh", "tunnel", "keepalive"]
 categories = ["command-line-utilities", "network-programming"]
 default-run = "rusty-autossh"
 
+# -----------------------------------------------------------------------------
+# [features] — v0.2.0 portfolio-wide Cargo Features Convention layout.
+#
+# Convention authority:
+#   * specs/adrs/0006-cargo-features-convention-for-portfolio-ports.md (why)
+#   * project-instructions.md §Cargo Feature Surface (what)
+#
+# rusty-autossh is a tightly-coupled-capability port per spec 00011 §Scope
+# Edge Cases: the documented capability is "keep an ssh process alive across
+# network drops (a Rust port of Carson Harding's autossh 1.4g)". The CLI
+# sub-capabilities (clap argv parsing, completions subcommand, tracing-based
+# logging, atomic pidfile writer, Unix daemonize double-fork, Windows
+# DETACHED_PROCESS self-respawn analogue, Strict-mode argv pre-scanner) are
+# tightly coupled inside the `cli` umbrella and cannot be carved out without
+# narrowing the existing v0.1.x `cli` composition. Per the minimum-convention
+# rule, ZERO new leaves are carved beyond the required umbrellas. See
+# docs/feature-layout.md for the explicit carving rationale.
+#
+# v0.2.0 is a PURELY ADDITIVE release. Every v0.1.x feature name and
+# composition is preserved verbatim; the new umbrellas (`full`,
+# `autossh-classic`, `autossh-minimal`) layer on top without renaming or
+# narrowing existing features. No SemVer break.
+#
+# Required umbrellas (FR-001..FR-004):
+#   default          — alias for `full`; kitchen-sink for casual `cargo install`
+#   full             — every leaf (degenerates to `cli` in this single-cap port)
+#   cli              — CLI-only deps + modules (library consumers strip)
+#   autossh-classic  — bare port, drop-in match for upstream autossh 1.4g
+#
+# Required preset bundles (FR-007 — 2 per port even for tightly-coupled-cap):
+#   autossh-classic  — autossh 1.4g drop-in replacement (aliased above)
+#   autossh-minimal  — explicit minimal-CLI semantic alias (same composition)
+#
+# Retained v0.1.x features (additive — names + compositions preserved verbatim):
+#   cli              — unchanged: clap + clap_complete + anstyle + tracing
+#                      + tracing-subscriber + tracing-appender + daemonize
+#                      + atomicwrites + windows-sys
+#
+# No leaf features carved — see docs/feature-layout.md §Leaves intentionally
+# NOT carved for the explicit per-capability rejection rationale.
+#
+# Note on platform-conditional deps: `daemonize` (Unix) and `windows-sys`
+# (Windows) live under `[target.'cfg(<plat>)'.dependencies]` tables, which
+# is a compile-time platform gate (NOT a Cargo feature). They are
+# unreachable on the non-applicable platform regardless of feature
+# selection. The `cli` feature wires them up consistently across both
+# platforms; the platform-conditional table makes the dep itself
+# unreachable when the cfg doesn't match.
+# -----------------------------------------------------------------------------
+
 [features]
-default = ["cli"]
+default = ["full"]
+
+# Umbrella: every leaf enabled. Kitchen sink for `cargo install` casual users.
+# In rusty-autossh (tightly-coupled-capability port) `full` resolves to `cli`
+# alone — preserving identical resolution to the v0.1.x `default = ["cli"]`
+# so no observable change for any consumer.
+full = ["cli"]
+
 # `cli` gates the CLI-only dependencies so library consumers can depend on
 # rusty-autossh with `default-features = false` without pulling in clap /
 # clap_complete / anstyle / tracing-* / daemonize / atomicwrites /
 # windows-sys. Two-config feature matrix per FR-061:
-#   * default = ["cli"]           → full CLI binary + library API
-#   * default-features = false    → library only (tokio + thiserror + socket2)
-# Per FR-061 + AD-001. NO companion-binary feature at v0.1.0 (single bin per
-# Constitution III + AD-001).
+#   * default = ["full"] (→ ["cli"])  → full CLI binary + library API
+#   * default-features = false        → library only (tokio + thiserror + socket2)
+# Per FR-061 + AD-001. NO companion-binary feature at v0.1.0 / v0.2.0
+# (single bin per Constitution III + AD-001).
+#
+# Composition preserved verbatim from v0.1.x.
 cli = [
     "dep:clap",
     "dep:clap_complete",
@@ -35,6 +94,20 @@ cli = [
     "dep:atomicwrites",
     "dep:windows-sys",
 ]
+
+# Umbrella: bare port, drop-in match for upstream autossh 1.4g. Pulls the
+# CLI surface; the bare upstream autossh behavior is reproduced via
+# `--strict`, `RUSTY_AUTOSSH_STRICT` env var, or `autossh` argv[0]
+# auto-detect (no extra feature flag required).
+autossh-classic = ["cli"]
+
+# Preset bundle: explicit minimal-CLI alias. Same composition as
+# autossh-classic (tightly-coupled-capability port has no smaller subset to
+# carve). Provided as a semantic alias mirroring the `<port>-minimal`
+# naming convention used by other portfolio ports (figlet-minimal,
+# ts-minimal, sponge-minimal, vipe-minimal, pee-minimal, pwgen-minimal,
+# detox-minimal, pv-minimal, pdfgrep-minimal).
+autossh-minimal = ["cli"]
 
 [dependencies]
 # Always-on: tokio IS the supervisor runtime (AD-004). Only the feature
